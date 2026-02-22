@@ -1,4 +1,4 @@
-\# CryptoTrack MVP — Моніторинг цін криптовалют
+\# CryptoTrack MVP — Найкращий додаток
 
 
 
