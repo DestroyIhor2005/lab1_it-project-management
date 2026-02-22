@@ -1,4 +1,4 @@
-\# CryptoTrack MVP — Лабораторна робота
+\# CryptoTrack MVP — Моніторинг цін криптовалют
 
 
 
