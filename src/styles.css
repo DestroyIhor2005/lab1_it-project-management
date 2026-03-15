@@ -1,0 +1,284 @@
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --bg: #f8fafc;
+  --card-bg: #ffffff;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --positive: #16a34a;
+  --negative: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.container {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 36px 18px 56px;
+}
+
+.page-header {
+  text-align: center;
+  margin-bottom: 26px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 2.2rem;
+  line-height: 1.2;
+}
+
+h2 {
+  margin: 0 0 14px;
+  font-size: 1.25rem;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.env-status {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.market-notice {
+  margin: 10px 0 0;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.top-10-section,
+.my-tokens-section,
+.favorites-section {
+  margin-top: 26px;
+}
+
+.search-wrapper {
+  position: relative;
+  margin-top: 18px;
+}
+
+.search-box {
+  display: flex;
+}
+
+#tickerInput {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  outline: none;
+}
+
+#tickerInput:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 15%);
+}
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 12%);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.suggestion-item {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: #fff;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestion-item:first-child {
+  border-top: 0;
+}
+
+.suggestion-item:hover {
+  background: #f8fafc;
+}
+
+.suggestion-feedback {
+  color: var(--muted);
+  cursor: default;
+}
+
+.suggestion-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.suggestion-symbol {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.suggestion-name {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.suggestion-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 160px;
+}
+
+.suggestion-price {
+  color: var(--text);
+  min-width: 88px;
+  text-align: right;
+}
+
+.crypto-table {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card-bg);
+}
+
+.table-header,
+.favorites-header,
+.crypto-item,
+.favorite-item {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.table-header,
+.favorites-header {
+  background: #f1f5f9;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.table-header-4 {
+  grid-template-columns: 1.1fr 1fr 1fr 1fr;
+}
+
+.table-header-5 {
+  grid-template-columns: 1.1fr 1fr 1fr 1fr 0.7fr;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list > li {
+  border-top: 1px solid var(--border);
+}
+
+.crypto-item {
+  grid-template-columns: 1.1fr 1fr 1fr 1fr;
+}
+
+.favorite-item {
+  grid-template-columns: 1.1fr 1fr 1fr 1fr 0.7fr;
+}
+
+.symbol {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.price {
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.volume {
+  color: var(--muted);
+}
+
+.change-positive {
+  color: var(--positive);
+  font-weight: 700;
+}
+
+.change-negative {
+  color: var(--negative);
+  font-weight: 700;
+}
+
+.add-to-favorites-btn,
+.remove-btn {
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.add-to-favorites-btn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.add-to-favorites-btn:hover {
+  background: #fde68a;
+}
+
+.remove-btn {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.remove-btn:hover {
+  background: #fecaca;
+}
+
+@media (max-width: 860px) {
+  .container {
+    padding: 22px 10px 36px;
+  }
+
+  .table-header-4,
+  .crypto-item {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .table-header-5,
+  .favorites-header,
+  .favorite-item {
+    grid-template-columns: 1fr 1fr;
+  }
+}
