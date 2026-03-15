@@ -201,23 +201,6 @@ const getCoinsDirectory = async (options = {}) => {
     return coinsDirectoryCache;
 };
 
-const getCoinSearchRank = (query, coin) => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const symbol = coin.symbol?.toLowerCase() || '';
-    const name = coin.name?.toLowerCase() || '';
-    const nameTokens = name.split(/[^a-z0-9]+/i).filter(Boolean);
-
-    if (symbol === normalizedQuery && name === normalizedQuery) return 0;
-    if (name === normalizedQuery) return 1;
-    if (nameTokens.includes(normalizedQuery)) return 2;
-    if (symbol === normalizedQuery) return 3;
-    if (name.startsWith(normalizedQuery)) return 4;
-    if (symbol.startsWith(normalizedQuery)) return 5;
-    if (name.includes(normalizedQuery)) return 6;
-    if (symbol.includes(normalizedQuery)) return 7;
-    return 8;
-};
-
 const getCoinMarketCapRank = (coin) => {
     const rank = Number(coin?.market_cap_rank ?? coin?.marketCapRank);
     return Number.isFinite(rank) && rank > 0 ? rank : Number.POSITIVE_INFINITY;
@@ -366,7 +349,7 @@ const fetchBinance24hrTicker = async (tickerSymbol) => {
 
     try {
         return await requestJson(`${BINANCE_API_BASE}/ticker/24hr?symbol=${tickerSymbol}`);
-    } catch (error) {
+    } catch {
         return null;
     }
 };
