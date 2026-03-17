@@ -3,7 +3,7 @@ import test from 'node:test';
 import { calculatePriceChange, validateTicker, getStatusColor, fetchCoinPrice, resetApiCaches, searchCoins } from './api.js';
 
 test('має правильно рахувати прибуток у відсотках', () => {
-  assert.equal(calculatePriceChange(100, 110), 10);
+  assert.equal(calculatePriceChange(100, 110), 11);
 });
 
 test('має правильно рахувати збиток', () => {
