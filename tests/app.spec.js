@@ -127,13 +127,13 @@ test.describe('Крипто Трекер: Основний функціонал'
     await expect(page.locator('#top10List')).toContainText('ETH');
   });
 
-  test('Пошук та додавання › користувач може знайти та додати новий токен', async ({ page }) => {
+  test('Пошук та відкриття › користувач може знайти токен і відкрити його графік', async ({ page }) => {
     await page.fill('#tickerInput', 'SOL');
     await expect(page.locator('#suggestions button.suggestion-item')).toHaveCount(1);
     await page.locator('#suggestions button.suggestion-item').click();
 
-    await expect(page.locator('#cryptoList .favorite-item')).toHaveCount(1);
-    await expect(page.locator('#cryptoList')).toContainText('SOL');
+    await expect(page.locator('.trade-page')).toBeVisible();
+    await expect(page.locator('.trade-pair-label')).toContainText('SOL/USDT');
   });
 
   test('Дані ринку › відображаються ціна та обсяг для кожного токена', async ({ page }) => {
@@ -143,11 +143,12 @@ test.describe('Крипто Трекер: Основний функціонал'
     await expect(firstRow.locator('.volume')).not.toHaveText('');
   });
 
-  test('Інтерфейс › поле пошуку очищується після додавання', async ({ page }) => {
+  test('Інтерфейс › поле пошуку очищується після повернення з графіка', async ({ page }) => {
     const input = page.locator('#tickerInput');
 
     await input.fill('ADA');
     await page.locator('#suggestions button.suggestion-item').click();
+    await page.locator('.trade-back-btn').click();
 
     await expect(input).toHaveValue('');
   });
