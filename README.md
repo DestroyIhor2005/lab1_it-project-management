@@ -1,6 +1,12 @@
+[![CI/CD Pipeline](https://github.com/DestroyIhor2005/lab1_it-project-management/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/DestroyIhor2005/lab1_it-project-management/actions/workflows/ci-cd.yml)
+
 # CryptoTracker
 
 Фронтенд-застосунок для моніторингу криптовалют у реальному часі. Проєкт створений на React + Vite та використовується в лабораторній роботі з налаштування CI/CD через GitHub Actions і Vercel.
+
+## Production URL
+
+Live application: https://crypto-tracker-pi-two.vercel.app/
 
 ## Можливості
 
