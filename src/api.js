@@ -872,22 +872,6 @@ const getTop10ByVolume = async () => {
     }
 };
 
-// Пошук id монети за її символом
-const getCoinId = async (symbol) => {
-    if (!symbol?.trim()) return null;
-
-    try {
-        const data = await requestJson(`${API_BASE}/search?query=${encodeURIComponent(symbol)}`);
-        const exactBySymbol = data?.coins?.find(
-            (coin) => coin.symbol?.toUpperCase() === symbol.trim().toUpperCase()
-        );
-        return (exactBySymbol || data?.coins?.[0])?.id ?? null;
-    } catch (error) {
-        console.error('Помилка при пошуку ID монети:', error);
-        return null;
-    }
-};
-
 // Підбір кандидатів лише з локального кешу (без мережевих запитів, для миттєвого відображення)
 const searchCoinCandidatesLocally = async (query) => {
     if (!query?.trim()) return [];

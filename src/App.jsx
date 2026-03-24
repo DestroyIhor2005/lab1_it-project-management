@@ -285,20 +285,6 @@ const formatPrice = (value, symbol = '') =>
 
 const normalizeLabel = (value) => String(value || '').trim().toLowerCase();
 
-const formatChartTimestamp = (timestamp, timeframeSeconds) => {
-  const date = new Date(timestamp);
-  if (timeframeSeconds <= 3600) {
-    return date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  return date.toLocaleString('uk-UA', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
 const buildChartLineGeometry = (
   points,
   width = CHART_SVG_WIDTH,
