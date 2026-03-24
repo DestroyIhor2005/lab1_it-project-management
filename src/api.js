@@ -126,7 +126,11 @@ const isRateLimitedError = (error) => {
 
 const formatBillions = (value) => {
     if (typeof value !== 'number' || Number.isNaN(value)) return 'N/A';
-    return `${(value / 1e9).toFixed(1)}B`;
+    if (value >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
+    if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
+    return value.toFixed(2);
 };
 
 const mapMarketCoin = (coin) => ({
@@ -218,7 +222,6 @@ const getCoinTextMatchScore = (query, coin) => {
     if (nameTokens.includes(normalizedQuery)) return 92;
     if (name.startsWith(normalizedQuery)) return 84;
     if (symbol.startsWith(normalizedQuery)) return 80;
-    if (name.includes(normalizedQuery)) return 70;
     if (symbol.includes(normalizedQuery)) return 65;
     return 0;
 };
@@ -234,6 +237,9 @@ const getCoinSearchScore = (query, coin) => {
 
     return textMatchScore + marketCapBonus + binanceBonus;
 };
+
+const filterRelevantCoins = (query, coins) =>
+    coins.filter((coin) => getCoinTextMatchScore(query, coin) > 0);
 
 const rankCoinsByQuery = (query, coins) =>
     [...coins].sort((leftCoin, rightCoin) => {
@@ -293,8 +299,11 @@ const findCoinsLocally = async (query, options = {}) => {
                 return symbol === normalizedQuery || name === normalizedQuery;
             }
 
-            return symbol.includes(normalizedQuery) || name.includes(normalizedQuery);
-        }))
+            if (symbol.includes(normalizedQuery)) return true;
+            const nameWords = name.split(/[^a-z0-9]+/).filter(Boolean);
+            return nameWords.some((w) => w.startsWith(normalizedQuery));
+            })
+            )
         .slice(0, SEARCH_CANDIDATE_POOL_SIZE);
 };
 
@@ -342,15 +351,105 @@ const mapBinanceTickerCoin = (coin, ticker, metadata = {}) => ({
     marketCapRank: metadata.marketCapRank ?? null,
 });
 
-const fetchBinance24hrTicker = async (tickerSymbol) => {
+const fetchBinance24hrTickers = async (tickerSymbols) => {
+    if (!tickerSymbols.length) return [];
+
+    try {
+        const encoded = encodeURIComponent(JSON.stringify(tickerSymbols));
+        const data = await requestJson(`${BINANCE_API_BASE}/ticker/24hr?symbols=${encoded}`);
+        return Array.isArray(data) ? data.filter((t) => t?.symbol) : [];
+    } catch {
+        return [];
+    }
+};
+
+const fetchBinanceOrderBook = async (symbol, limit = 16) => {
+    const tickerSymbol = getBinanceTickerSymbol(symbol);
     if (!tickerSymbol) {
-        return null;
+        return { bids: [], asks: [] };
     }
 
     try {
-        return await requestJson(`${BINANCE_API_BASE}/ticker/24hr?symbol=${tickerSymbol}`);
-    } catch {
-        return null;
+        const data = await requestJson(
+            `${BINANCE_API_BASE}/depth?symbol=${encodeURIComponent(tickerSymbol)}&limit=${encodeURIComponent(limit)}`
+        );
+
+        const mapLevels = (levels) => (Array.isArray(levels) ? levels : [])
+            .map((entry) => {
+                if (!Array.isArray(entry) || entry.length < 2) {
+                    return null;
+                }
+
+                const price = Number(entry[0]);
+                const quantity = Number(entry[1]);
+
+                if (!Number.isFinite(price) || !Number.isFinite(quantity) || quantity <= 0) {
+                    return null;
+                }
+
+                    return { price, quantity, total: price * quantity };
+            })
+            .filter(Boolean);
+
+        const bids = mapLevels(data?.bids).sort((left, right) => right.price - left.price);
+        const asks = mapLevels(data?.asks).sort((left, right) => left.price - right.price);
+
+        return { bids, asks };
+    } catch (error) {
+        console.error(`Помилка при отриманні Binance order book для ${symbol}:`, error);
+        return { bids: [], asks: [] };
+    }
+};
+
+const fetchBinanceKlines = async (symbol, interval = '1m', limit = 300) => {
+    const tickerSymbol = getBinanceTickerSymbol(symbol);
+    if (!tickerSymbol) {
+        return [];
+    }
+
+    try {
+        const data = await requestJson(
+            `${BINANCE_API_BASE}/klines?symbol=${encodeURIComponent(tickerSymbol)}&interval=${encodeURIComponent(interval)}&limit=${encodeURIComponent(limit)}`
+        );
+
+        if (!Array.isArray(data)) {
+            return [];
+        }
+
+        return data
+            .map((entry) => {
+                if (!Array.isArray(entry) || entry.length < 5) {
+                    return null;
+                }
+
+                const openTimeMs = Number(entry[0]);
+                const open = Number(entry[1]);
+                const high = Number(entry[2]);
+                const low = Number(entry[3]);
+                const close = Number(entry[4]);
+
+                if (
+                    !Number.isFinite(openTimeMs)
+                    || !Number.isFinite(open)
+                    || !Number.isFinite(high)
+                    || !Number.isFinite(low)
+                    || !Number.isFinite(close)
+                ) {
+                    return null;
+                }
+
+                return {
+                    time: Math.floor(openTimeMs / 1000),
+                    open,
+                    high,
+                    low,
+                    close,
+                };
+            })
+            .filter(Boolean);
+    } catch (error) {
+        console.error(`Помилка при отриманні Binance klines для ${symbol}:`, error);
+        return [];
     }
 };
 
@@ -367,26 +466,71 @@ const fetchCoinPrice = async (coinId) => {
     }
 };
 
-// Повертає розширені дані по монеті
-const fetchCryptoPrice = async (coinId) => {
+const fetchCoinMarketChart = async (coinId, days = 1) => {
+    if (!coinId) return [];
+
     try {
         const data = await requestJson(
-            `${API_BASE}/simple/price?ids=${coinId}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true`
+            `${API_BASE}/coins/${encodeURIComponent(coinId)}/market_chart?vs_currency=usd&days=${encodeURIComponent(days)}`
         );
-        const coin = data?.[coinId];
-        if (!coin) return null;
 
-        return {
-            price: coin.usd,
-            change24h: coin.usd_24h_change ?? 0,
-            volume: formatBillions(coin.usd_24h_vol),
-            marketCap: formatBillions(coin.usd_market_cap),
-        };
+        const prices = Array.isArray(data?.prices) ? data.prices : [];
+        return prices
+            .map((entry) => {
+                if (!Array.isArray(entry) || entry.length < 2) {
+                    return null;
+                }
+
+                const timestamp = Number(entry[0]);
+                const price = Number(entry[1]);
+
+                if (!Number.isFinite(timestamp) || !Number.isFinite(price)) {
+                    return null;
+                }
+
+                return { timestamp, price };
+            })
+            .filter(Boolean);
     } catch (error) {
-        console.error('Помилка при отриманні повних даних монети:', error);
-        return null;
+        console.error(`Помилка при отриманні історії ціни для ${coinId}:`, error);
+        return [];
     }
 };
+
+const fetchCoinMarketChartRange = async (coinId, fromTimestampSec, toTimestampSec) => {
+    if (!coinId || !Number.isFinite(Number(fromTimestampSec)) || !Number.isFinite(Number(toTimestampSec))) {
+        return [];
+    }
+
+    try {
+        const data = await requestJson(
+            `${API_BASE}/coins/${encodeURIComponent(coinId)}/market_chart/range?vs_currency=usd&from=${encodeURIComponent(fromTimestampSec)}&to=${encodeURIComponent(toTimestampSec)}`
+        );
+
+        const prices = Array.isArray(data?.prices) ? data.prices : [];
+        return prices
+            .map((entry) => {
+                if (!Array.isArray(entry) || entry.length < 2) {
+                    return null;
+                }
+
+                const timestamp = Number(entry[0]);
+                const price = Number(entry[1]);
+
+                if (!Number.isFinite(timestamp) || !Number.isFinite(price)) {
+                    return null;
+                }
+
+                return { timestamp, price };
+            })
+            .filter(Boolean);
+    } catch (error) {
+        console.error(`Помилка при отриманні історії ціни (range) для ${coinId}:`, error);
+        return [];
+    }
+};
+
+
 
 const fetchCoinsSnapshot = async (coinIds, metadataById = {}, options = {}) => {
     if (!coinIds?.length) return [];
@@ -419,24 +563,14 @@ const fetchBinanceCoinsSnapshot = async (coins, metadataById = {}) => {
     if (!coins?.length) return [];
 
     const coinsWithTickers = coins
-        .map((coin) => ({
-            coin,
-            tickerSymbol: getBinanceTickerSymbol(coin.symbol),
-        }))
+        .map((coin) => ({ coin, tickerSymbol: getBinanceTickerSymbol(coin.symbol) }))
         .filter(({ tickerSymbol }) => tickerSymbol);
 
-    if (!coinsWithTickers.length) {
-        return [];
-    }
+    if (!coinsWithTickers.length) return [];
 
     const uniqueTickerSymbols = [...new Set(coinsWithTickers.map(({ tickerSymbol }) => tickerSymbol))];
-    const tickerEntries = await Promise.all(
-        uniqueTickerSymbols.map(async (tickerSymbol) => [tickerSymbol, await fetchBinance24hrTicker(tickerSymbol)])
-    );
-
-    const tickersBySymbol = new Map(
-        tickerEntries.filter(([, ticker]) => ticker?.symbol)
-    );
+    const tickers = await fetchBinance24hrTickers(uniqueTickerSymbols);
+    const tickersBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
 
     return coinsWithTickers
         .map(({ coin, tickerSymbol }) => {
@@ -604,10 +738,6 @@ const searchCoins = async (query) => {
     try {
         const localCoins = await findCoinsLocally(query, { silent: true });
 
-        if (coinsDirectoryCache?.length && localCoins.length) {
-            return await fetchSearchCoinResults(query, localCoins);
-        }
-
         let serverCoins = [];
         let searchWasRateLimited = false;
 
@@ -624,7 +754,10 @@ const searchCoins = async (query) => {
             }
         }
 
-        const coins = rankCoinsByQuery(query, dedupeCoinsById([...serverCoins, ...localCoins])).slice(0, SEARCH_CANDIDATE_POOL_SIZE);
+        const coins = rankCoinsByQuery(
+            query,
+            filterRelevantCoins(query, dedupeCoinsById([...serverCoins, ...localCoins]))
+        ).slice(0, SEARCH_CANDIDATE_POOL_SIZE);
 
         if (!coins.length) {
             if (searchWasRateLimited) {
@@ -645,7 +778,10 @@ const searchCoins = async (query) => {
 };
 
 const fetchSearchCoinResults = async (query, coins) => {
-    const rankedCoins = rankCoinsByQuery(query, dedupeCoinsById(coins)).slice(0, SEARCH_CANDIDATE_POOL_SIZE);
+    const rankedCoins = rankCoinsByQuery(
+        query,
+        filterRelevantCoins(query, dedupeCoinsById(coins))
+    ).slice(0, SEARCH_CANDIDATE_POOL_SIZE);
 
     const metadataById = Object.fromEntries(
         rankedCoins.map((coin) => [coin.id, {
@@ -660,48 +796,21 @@ const fetchSearchCoinResults = async (query, coins) => {
     const snapshotsById = new Map();
     let pricingWasRateLimited = false;
 
-    try {
-        const marketSnapshots = await fetchCoinsMarketSnapshot(coinIds, metadataById, {
-            silent: true,
-            throwOnRateLimit: true,
-            includeDetails: false,
-        });
+    // Крок 1: Binance batch (швидкий, без rate-limit) для монет з унікальним символом
+    const uniqueSymbolCoins = getCoinsWithUniqueSymbols(rankedCoins);
+    const binanceSnapshots = await fetchBinanceCoinsSnapshot(uniqueSymbolCoins, metadataById);
+    binanceSnapshots.forEach((coin) => snapshotsById.set(coin.id, coin));
 
-        marketSnapshots.forEach((coin) => {
-            snapshotsById.set(coin.id, coin);
-        });
-    } catch (error) {
-        if (isRateLimitedError(error)) {
-            pricingWasRateLimited = true;
-        } else {
-            throw error;
-        }
-    }
-
-    const missingCoinIds = coinIds.filter((coinId) => !snapshotsById.has(coinId));
-
-    if (missingCoinIds.length) {
-        const missingCoins = rankedCoins.filter((coin) => missingCoinIds.includes(coin.id));
-        const uniqueSymbolCoins = getCoinsWithUniqueSymbols(missingCoins);
-        const binanceSnapshots = await fetchBinanceCoinsSnapshot(uniqueSymbolCoins, metadataById);
-
-        binanceSnapshots.forEach((coin) => {
-            snapshotsById.set(coin.id, coin);
-        });
-    }
-
-    const stillMissingCoinIds = coinIds.filter((coinId) => !snapshotsById.has(coinId));
-
-    if (stillMissingCoinIds.length) {
+    // Крок 2: CoinGecko /coins/markets для монет без ціни
+    const missingAfterBinance = coinIds.filter((id) => !snapshotsById.has(id));
+    if (missingAfterBinance.length) {
         try {
-            const priceSnapshots = await fetchCoinsSnapshot(stillMissingCoinIds, metadataById, {
+            const marketSnapshots = await fetchCoinsMarketSnapshot(missingAfterBinance, metadataById, {
                 silent: true,
                 throwOnRateLimit: true,
+                includeDetails: false,
             });
-
-            priceSnapshots.forEach((coin) => {
-                snapshotsById.set(coin.id, coin);
-            });
+            marketSnapshots.forEach((coin) => snapshotsById.set(coin.id, coin));
         } catch (error) {
             if (isRateLimitedError(error)) {
                 pricingWasRateLimited = true;
@@ -711,34 +820,43 @@ const fetchSearchCoinResults = async (query, coins) => {
         }
     }
 
-    const unresolvedCoinIds = coinIds.filter((coinId) => !snapshotsById.has(coinId));
+    // Крок 3: CoinGecko /simple/price для тих що залишились
+    const stillMissingCoinIds = coinIds.filter((coinId) => !snapshotsById.has(coinId));
+    if (stillMissingCoinIds.length) {
+        try {
+            const priceSnapshots = await fetchCoinsSnapshot(stillMissingCoinIds, metadataById, {
+                silent: true,
+                throwOnRateLimit: true,
+            });
+            priceSnapshots.forEach((coin) => snapshotsById.set(coin.id, coin));
+        } catch (error) {
+            if (isRateLimitedError(error)) {
+                pricingWasRateLimited = true;
+            } else {
+                throw error;
+            }
+        }
+    }
 
+    // Крок 4: Детальний endpoint для монет що ще не отримали ціну
+    const unresolvedCoinIds = coinIds.filter((coinId) => !snapshotsById.has(coinId));
     if (unresolvedCoinIds.length) {
         const detailedSnapshots = await Promise.all(
             unresolvedCoinIds.map((coinId) => fetchCoinMarketDetails(coinId, metadataById[coinId], { silent: true }))
         );
-
-        detailedSnapshots.filter(Boolean).forEach((coin) => {
-            snapshotsById.set(coin.id, coin);
-        });
+        detailedSnapshots.filter(Boolean).forEach((coin) => snapshotsById.set(coin.id, coin));
     }
 
     if (!snapshotsById.size && pricingWasRateLimited) {
         return rankedCoins.map((coin) => mapSearchCandidateCoin(coin, metadataById[coin.id])).slice(0, MAX_SEARCH_CANDIDATES);
     }
 
-    const pricedResults = rankedCoins
-        .map((coin) => snapshotsById.get(coin.id) || null)
-        .filter((coin) => Number.isFinite(Number(coin?.price)) && Number(coin.price) > 0)
-        .slice(0, MAX_SEARCH_CANDIDATES);
-
-    if (pricedResults.length) {
-        return pricedResults;
-    }
-
+    // Завжди повертаємо топ-N за релевантністю: прайс коли є, N/A якщо немає.
+    // Це гарантує, що релевантні монети (наприклад ADA/Cardano) не витісняються
+    // нерелевантними токенами лише тому що ті отримали ціну від Binance.
     return rankedCoins
-        .map((coin) => mapSearchCandidateCoin(coin, metadataById[coin.id]))
-        .slice(0, MAX_SEARCH_CANDIDATES);
+        .slice(0, MAX_SEARCH_CANDIDATES)
+        .map((coin) => snapshotsById.get(coin.id) || mapSearchCandidateCoin(coin, metadataById[coin.id]));
 };
 
 // Топ монет за 24h обсягом
@@ -770,6 +888,13 @@ const getCoinId = async (symbol) => {
     }
 };
 
+// Підбір кандидатів лише з локального кешу (без мережевих запитів, для миттєвого відображення)
+const searchCoinCandidatesLocally = async (query) => {
+    if (!query?.trim()) return [];
+    const localCoins = await findCoinsLocally(query, { silent: true });
+    return localCoins.slice(0, MAX_SEARCH_CANDIDATES).map((coin) => mapSearchCandidateCoin(coin));
+};
+
 // Утиліти (для UI і тестів)
 const calculatePriceChange = (oldPrice, newPrice) => {
     if (!oldPrice || oldPrice === 0) return 0;
@@ -789,18 +914,19 @@ const getStatusColor = (change) => {
 
 export {
     calculatePriceChange,
+    fetchBinanceOrderBook,
+    fetchBinanceKlines,
+    fetchCoinMarketChart,
+    fetchCoinMarketChartRange,
     fetchCoinPrice,
-    fetchBinanceCoinsSnapshot,
-    fetchCoinsMarketSnapshot,
     fetchCoinsSnapshot,
-    fetchCryptoPrice,
     getBinanceTickerSymbol,
-    getCoinId,
     getStatusColor,
     getTop10ByVolume,
     prefetchCoinsDirectory,
     resetApiCaches,
     searchCoins,
+    searchCoinCandidatesLocally,
     subscribeToBinanceTickers,
     validateTicker,
 };
