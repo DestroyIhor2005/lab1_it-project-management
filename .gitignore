@@ -8,6 +8,9 @@ build/
 out/
 bin/
 obj/
+coverage/
+playwright-report/
+test-results/
 
 # === Environment variables (SECRETS) ===
 .env
@@ -30,4 +33,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.iml
-*.swp*.docx
+*.swp
+*.docx
