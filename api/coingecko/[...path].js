@@ -25,8 +25,20 @@ export default async function handler(request, response) {
   };
 
   // Keep the CoinGecko key on the server side only.
-  if (process.env.COINGECKO_API_KEY) {
-    headers['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
+  const apiKey = String(process.env.COINGECKO_API_KEY || '').trim();
+  if (apiKey) {
+    // Demo plans usually use x-cg-demo-api-key.
+    headers['x-cg-demo-api-key'] = apiKey;
+    // Pro plans use x-cg-pro-api-key.
+    headers['x-cg-pro-api-key'] = apiKey;
+
+    // Add both query formats for maximum compatibility across plan types.
+    if (!upstreamUrl.searchParams.has('x_cg_demo_api_key')) {
+      upstreamUrl.searchParams.set('x_cg_demo_api_key', apiKey);
+    }
+    if (!upstreamUrl.searchParams.has('x_cg_pro_api_key')) {
+      upstreamUrl.searchParams.set('x_cg_pro_api_key', apiKey);
+    }
   }
 
   try {
