@@ -27,17 +27,10 @@ export default async function handler(request, response) {
   // Keep the CoinGecko key on the server side only.
   const apiKey = String(process.env.COINGECKO_API_KEY || '').trim();
   if (apiKey) {
-    // Demo plans usually use x-cg-demo-api-key.
+    // Demo plan auth format.
     headers['x-cg-demo-api-key'] = apiKey;
-    // Pro plans use x-cg-pro-api-key.
-    headers['x-cg-pro-api-key'] = apiKey;
-
-    // Add both query formats for maximum compatibility across plan types.
     if (!upstreamUrl.searchParams.has('x_cg_demo_api_key')) {
       upstreamUrl.searchParams.set('x_cg_demo_api_key', apiKey);
-    }
-    if (!upstreamUrl.searchParams.has('x_cg_pro_api_key')) {
-      upstreamUrl.searchParams.set('x_cg_pro_api_key', apiKey);
     }
   }
 
