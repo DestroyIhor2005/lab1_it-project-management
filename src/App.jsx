@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as Sentry from '@sentry/react';
+import posthog from 'posthog-js';
 import {
   fetchBinanceOrderBook,
   fetchBinanceKlines,
@@ -24,6 +26,7 @@ const CHART_AXIS_GAP = 12;
 const ORDER_BOOK_LIMIT = 11;
 const CHART_SVG_WIDTH = 1480;
 const CHART_SVG_HEIGHT = 760;
+const URGENT_CHANGE_THRESHOLD = 5;
 const CHART_MODE_OPTIONS = [
   { label: 'Line', value: 'line' },
   { label: 'Candles', value: 'candles' },
@@ -38,6 +41,26 @@ const CHART_TIMEFRAME_OPTIONS = [
   { label: '1w', value: '1w', seconds: 604800 },
 ];
 const FIXED_TWO_DECIMAL_SYMBOLS = new Set(['USDT', 'USDC', 'USD1', 'FDUSD', 'TUSD', 'BUSD', 'DAI']);
+
+const buildUserIdFromEmail = (email) => {
+  const normalized = String(email || '').trim().toLowerCase();
+  let hash = 0;
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return `user_${Math.abs(hash) || Date.now()}`;
+};
+
+const captureAnalyticsEvent = (eventName, properties) => {
+  try {
+    posthog.capture(eventName, properties);
+  } catch {
+    // Ignore analytics failures so UI behavior stays unaffected.
+  }
+};
 
 const readCachedCoins = (storageKey) => {
   try {
@@ -113,6 +136,8 @@ const rankInstantSuggestions = (query, coins) => {
 const hasSuggestionPrice = (coin) => Number.isFinite(Number(coin?.price)) && Number(coin.price) > 0;
 
 const getPricedSuggestions = (coins) => coins.filter((coin) => hasSuggestionPrice(coin));
+
+const isUrgentCoin = (coin) => Math.abs(Number(coin?.change24h) || 0) >= URGENT_CHANGE_THRESHOLD;
 
 const mergeSuggestionCoinData = (nextCoin, knownCoin) => {
   if (!knownCoin) {
@@ -401,6 +426,8 @@ function App() {
   const [marketNotice, setMarketNotice] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [streamStatus, setStreamStatus] = useState('idle');
+  const [isUrgentFilterVisible, setIsUrgentFilterVisible] = useState(false);
+  const [showUrgentOnly, setShowUrgentOnly] = useState(false);
   const [hasResolvedSearch, setHasResolvedSearch] = useState(false);
   const [chartCoin, setChartCoin] = useState(null);
   const [chartTimeframe, setChartTimeframe] = useState('1m');
@@ -412,12 +439,22 @@ function App() {
   const [orderBook, setOrderBook] = useState({ bids: [], asks: [] });
   const [isOrderBookLoading, setIsOrderBookLoading] = useState(false);
   const [orderBookError, setOrderBookError] = useState('');
+  const [authMode, setAuthMode] = useState('login');
+  const [authError, setAuthError] = useState('');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(true);
+  const [authForm, setAuthForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+  });
   const top10Ref = useRef([]);
   const watchlistRef = useRef([]);
   const favoritesRef = useRef([]);
   const searchCacheRef = useRef({});
   const knownSuggestionsRef = useRef({});
   const chartCacheRef = useRef({});
+  const taskStartedAtRef = useRef({});
 
   const streamKey = [...new Set([
     ...top10.map((coin) => coin.symbol),
@@ -431,6 +468,14 @@ function App() {
   const trackedSymbols = useMemo(
     () => (streamKey ? streamKey.split('|') : []),
     [streamKey]
+  );
+  const urgentTop10 = useMemo(
+    () => top10.filter((coin) => isUrgentCoin(coin)),
+    [top10]
+  );
+  const visibleTop10 = useMemo(
+    () => (showUrgentOnly ? urgentTop10 : top10),
+    [showUrgentOnly, top10, urgentTop10]
   );
   const searchSourceCoins = useMemo(
     () => [...watchlist, ...favorites, ...top10],
@@ -655,6 +700,109 @@ function App() {
       setMarketNotice('');
     }
   }, []);
+
+  const handleAuthFieldChange = (event) => {
+    const { name, value } = event.target;
+    setAuthError('');
+    setAuthForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleAuthSubmit = (event) => {
+    event.preventDefault();
+
+    const userName = String(authForm.name || '').trim();
+    const userEmail = String(authForm.email || '').trim().toLowerCase();
+    const userPassword = String(authForm.password || '').trim();
+
+    const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail);
+    if (!isEmailValid) {
+      setAuthError('Введи коректний email.');
+      return;
+    }
+
+    if (userPassword.length < 6) {
+      setAuthError('Пароль має бути не коротший за 6 символів.');
+      return;
+    }
+
+    if (authMode === 'register' && !userName) {
+      setAuthError('Для реєстрації введи імʼя.');
+      return;
+    }
+
+    const userId = buildUserIdFromEmail(userEmail);
+    const segment = authMode === 'register' ? 'new_user' : 'authenticated_user';
+
+    Sentry.setUser({
+      id: userId,
+      email: userEmail,
+    });
+    Sentry.setTag('segment', segment);
+    Sentry.setTag('auth_mode', authMode);
+
+    setCurrentUser({
+      id: userId,
+      name: userName,
+      email: userEmail,
+      segment,
+    });
+    setIsAuthModalOpen(false);
+  };
+
+  const handleLogout = () => {
+    Sentry.setUser(null);
+    setCurrentUser(null);
+    setAuthMode('login');
+    setAuthError('');
+    setIsAuthModalOpen(false);
+    setAuthForm((prev) => ({
+      ...prev,
+      name: '',
+      email: '',
+      password: '',
+    }));
+  };
+
+  const openLoginModal = () => {
+    setAuthMode('login');
+    setAuthError('');
+    setIsAuthModalOpen(true);
+  };
+
+  useEffect(() => {
+    const syncUrgentFilterFlag = () => {
+      setIsUrgentFilterVisible(Boolean(posthog.isFeatureEnabled('show-urgent-filter')));
+    };
+
+    const reloadUrgentFilterFlag = () => {
+      try {
+        posthog.reloadFeatureFlags();
+      } catch {
+        syncUrgentFilterFlag();
+      }
+    };
+
+    syncUrgentFilterFlag();
+    posthog.onFeatureFlags(syncUrgentFilterFlag);
+
+    window.addEventListener('focus', reloadUrgentFilterFlag);
+    document.addEventListener('visibilitychange', reloadUrgentFilterFlag);
+    reloadUrgentFilterFlag();
+
+    return () => {
+      window.removeEventListener('focus', reloadUrgentFilterFlag);
+      document.removeEventListener('visibilitychange', reloadUrgentFilterFlag);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isUrgentFilterVisible) {
+      setShowUrgentOnly(false);
+    }
+  }, [isUrgentFilterVisible]);
 
   useEffect(() => {
     if (!top10.length) {
@@ -1049,6 +1197,22 @@ function App() {
   const addToFavorites = (coin) => {
     setFavorites((prev) => {
       if (prev.some((item) => item.id === coin.id)) return prev;
+
+      const startedAt = taskStartedAtRef.current[coin.id];
+      const timeToCompleteSeconds = startedAt
+        ? Math.max(1, Math.round((Date.now() - startedAt) / 1000))
+        : 0;
+
+      captureAnalyticsEvent('task_completed', {
+        time_to_complete_seconds: timeToCompleteSeconds,
+        coin_id: coin.id,
+        symbol: coin.symbol,
+        name: coin.name,
+        is_authenticated: true,
+      });
+
+      delete taskStartedAtRef.current[coin.id];
+
       return [coin, ...prev];
     });
   };
@@ -1060,10 +1224,31 @@ function App() {
   };
 
   const removeFromFavorites = (coinId) => {
+    const coin = favorites.find((item) => item.id === coinId) || watchlist.find((item) => item.id === coinId) || null;
+
+    captureAnalyticsEvent('task_deleted', {
+      reason: 'manual_remove',
+      coin_id: coinId,
+      symbol: coin?.symbol ?? null,
+      name: coin?.name ?? null,
+      is_authenticated: true,
+    });
+
     setFavorites((prev) => prev.filter((coin) => coin.id !== coinId));
   };
 
   const openCoinChart = (coin) => {
+    taskStartedAtRef.current[coin.id] = Date.now();
+
+    captureAnalyticsEvent('task_created', {
+      priority: 'high',
+      category: 'work',
+      is_authenticated: true,
+      coin_id: coin.id,
+      symbol: coin.symbol,
+      name: coin.name,
+    });
+
     setChartCoin(coin);
     setChartTimeframe('1m');
     setChartMode('candles');
@@ -1140,6 +1325,10 @@ function App() {
 
     setIsLoadingSuggestions(false);
     setSuggestions([]);
+  };
+
+  const throwError = () => {
+    throw new Error('Sentry Test Error: Something went wrong!');
   };
 
   const suggestionVisible = useMemo(
@@ -1455,7 +1644,98 @@ function App() {
 
   return (
     <main className="container">
+      {isAuthModalOpen ? (
+        <div className="auth-modal-overlay" role="dialog" aria-modal="true" aria-label="Вхід або реєстрація">
+          <div className="auth-modal-card">
+            <p className="auth-modal-kicker">Sentry Lab Access</p>
+            <h2 className="auth-modal-title">{authMode === 'login' ? 'Вхід' : 'Реєстрація'}</h2>
+            <p className="auth-modal-subtitle">Стандартна форма входу/реєстрації. Користувач для Sentry визначається автоматично.</p>
+
+            <div className="auth-mode-switch" role="tablist" aria-label="Режим авторизації">
+              <button
+                type="button"
+                className={`auth-mode-btn${authMode === 'login' ? ' active' : ''}`}
+                onClick={() => setAuthMode('login')}
+              >
+                Вхід
+              </button>
+              <button
+                type="button"
+                className={`auth-mode-btn${authMode === 'register' ? ' active' : ''}`}
+                onClick={() => setAuthMode('register')}
+              >
+                Реєстрація
+              </button>
+            </div>
+
+            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              {authMode === 'register' ? (
+                <>
+                  <label htmlFor="authUserName">Імʼя</label>
+                  <input
+                    id="authUserName"
+                    name="name"
+                    type="text"
+                    value={authForm.name}
+                    onChange={handleAuthFieldChange}
+                    placeholder="Введи імʼя"
+                    autoComplete="name"
+                    required
+                  />
+                </>
+              ) : null}
+
+              <label htmlFor="authUserEmail">Email</label>
+              <input
+                id="authUserEmail"
+                name="email"
+                type="email"
+                value={authForm.email}
+                onChange={handleAuthFieldChange}
+                placeholder="student@example.com"
+                autoComplete="email"
+                required
+              />
+
+              <label htmlFor="authUserPassword">Пароль</label>
+              <input
+                id="authUserPassword"
+                name="password"
+                type="password"
+                value={authForm.password}
+                onChange={handleAuthFieldChange}
+                placeholder="Щонайменше 6 символів"
+                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                required
+              />
+
+              {authError ? <p className="auth-form-error">{authError}</p> : null}
+
+              <button type="submit" className="auth-submit-btn">
+                {authMode === 'login' ? 'Увійти' : 'Зареєструватися'}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       <header className="page-header">
+        <div className="header-top-row">
+          <div className="header-top-left">
+            <p className="env-status header-user-chip">User: <strong>{currentUser ? currentUser.email : 'guest'}</strong></p>
+          </div>
+          <div className="header-top-right">
+            {currentUser ? (
+              <button type="button" className="urgent-filter-btn header-logout-btn" onClick={handleLogout}>
+                Logout
+              </button>
+            ) : (
+              <button type="button" className="urgent-filter-btn header-logout-btn" onClick={openLoginModal}>
+                Login
+              </button>
+            )}
+          </div>
+        </div>
         <span className="page-kicker">Digital Asset Intelligence</span>
         <h1>CryptoTracker</h1>
         <p className="subtitle">Ринок у реальному часі</p>
@@ -1465,6 +1745,9 @@ function App() {
           {lastUpdated ? (
             <p className="env-status">Last update: <strong>{lastUpdated.toLocaleTimeString('uk-UA')}</strong></p>
           ) : null}
+          <button type="button" className="urgent-filter-btn" onClick={throwError}>
+            Break the world
+          </button>
         </div>
         {marketNotice ? <p className="market-notice">{marketNotice}</p> : null}
       </header>
@@ -1518,7 +1801,26 @@ function App() {
       </section>
 
       <section className="top-10-section">
-        <h2>Топ 10 монет по 24h обсягу</h2>
+        <div className="section-heading">
+          <div>
+            <h2>Топ 10 монет по 24h обсягу</h2>
+            {isUrgentFilterVisible ? (
+              <p className="section-caption">
+                Urgent = зміна ціни на {URGENT_CHANGE_THRESHOLD}% або більше за 24 години.
+              </p>
+            ) : null}
+          </div>
+          {isUrgentFilterVisible ? (
+            <button
+              type="button"
+              id="urgent-btn"
+              className={`urgent-filter-btn${showUrgentOnly ? ' active' : ''}`}
+              onClick={() => setShowUrgentOnly((currentValue) => !currentValue)}
+            >
+              {showUrgentOnly ? 'Show All' : 'Only Urgent'}
+            </button>
+          ) : null}
+        </div>
         <div className="crypto-table">
           <div className="table-header table-header-4">
             <span>Токен</span>
@@ -1527,7 +1829,9 @@ function App() {
             <span>Обсяг (24h)</span>
           </div>
           <ul id="top10List" className="list">
-            {top10.map((coin) => renderRow(coin))}
+            {visibleTop10.length ? visibleTop10.map((coin) => renderRow(coin)) : (
+              <li className="list-empty-state">Немає монет, які відповідають urgent-фільтру.</li>
+            )}
           </ul>
         </div>
       </section>
