@@ -17,9 +17,9 @@ Live application: https://crypto-tracker-pi-two.vercel.app/
 - перегляд топ-10 монет за 24h обсягом
 - пошук монет за назвою або тікером
 - відкриття сторінки монети з графіком, стаканом і ринковими даними
-- збереження обраних монет у локальному сховищі браузера
-- інтеграція PostHog через змінні середовища Vite
-- інтеграція Sentry для error tracking, tracing, replay та alerting
+- збереження обраних монет у локальному сховищі браузера, окремо для гостьової сесії або залогіненого акаунта
+- інтеграція PostHog через first-party proxy `/api/posthog`
+- інтеграція Sentry через tunnel `/api/sentry` для error tracking, tracing, replay та alerting
 
 ## Технології
 
@@ -78,15 +78,17 @@ npm run build
 Основні змінні:
 
 - `VITE_APP_STATUS` — показується в інтерфейсі
-- `VITE_APP_ENV` — середовище застосунку для Sentry
+- `VITE_APP_ENV` — середовище застосунку для Sentry; якщо відсутнє, використовується `VITE_APP_STATUS`
 - `VITE_PUBLIC_POSTHOG_KEY` — project token PostHog
-- `VITE_PUBLIC_POSTHOG_API_HOST` — ingest host PostHog
+- `VITE_PUBLIC_POSTHOG_PROXY_PATH` — client path для proxy PostHog, за замовчуванням `/api/posthog`
+- `VITE_PUBLIC_POSTHOG_API_HOST` — ingest host PostHog для proxy
 - `VITE_SENTRY_DSN` — DSN ключ Sentry для error tracking і tracing
+- `VITE_SENTRY_TUNNEL_PATH` — client path для Sentry tunnel, за замовчуванням `/api/sentry`
 
 Перевірка:
 
 - `npm run dev` — у UI має відображатися локальний режим
-- `npm run build && npm run preview` — має підтягуватись production-конфіг
+- `npm run build && npm run preview` — має підтягуватись production-конфіг і same-origin proxy paths
 
 ## CI/CD
 

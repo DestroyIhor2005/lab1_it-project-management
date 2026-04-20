@@ -62,9 +62,9 @@ const captureAnalyticsEvent = (eventName, properties) => {
   }
 };
 
-const readCachedCoins = (storageKey) => {
+const readCachedCoins = (storageArea, storageKey) => {
   try {
-    const rawValue = localStorage.getItem(storageKey);
+    const rawValue = storageArea.getItem(storageKey);
     if (!rawValue) {
       return [];
     }
@@ -75,6 +75,8 @@ const readCachedCoins = (storageKey) => {
     return [];
   }
 };
+
+const buildScopedCollectionKey = (baseKey, userId) => (userId ? `${baseKey}:${userId}` : baseKey);
 
 const readCachedDate = (storageKey) => {
   try {
@@ -455,6 +457,7 @@ function App() {
   const knownSuggestionsRef = useRef({});
   const chartCacheRef = useRef({});
   const taskStartedAtRef = useRef({});
+  const isHydratingCollectionsRef = useRef(true);
 
   const streamKey = [...new Set([
     ...top10.map((coin) => coin.symbol),
@@ -685,21 +688,29 @@ function App() {
   };
 
   useEffect(() => {
-    const savedWatchlist = readCachedCoins(WATCHLIST_KEY);
-    const savedFavorites = readCachedCoins(FAVORITES_KEY);
-    const cachedTop10 = readCachedCoins(TOP10_CACHE_KEY);
+    const userStorageId = currentUser?.id || null;
+    const storageArea = userStorageId ? localStorage : sessionStorage;
+    const watchlistStorageKey = buildScopedCollectionKey(WATCHLIST_KEY, userStorageId);
+    const favoritesStorageKey = buildScopedCollectionKey(FAVORITES_KEY, userStorageId);
+
+    isHydratingCollectionsRef.current = true;
+
+    const savedWatchlist = readCachedCoins(storageArea, watchlistStorageKey);
+    const savedFavorites = readCachedCoins(storageArea, favoritesStorageKey);
+    const cachedTop10 = readCachedCoins(localStorage, TOP10_CACHE_KEY);
     const cachedTop10Time = readCachedDate(TOP10_CACHE_TIME_KEY);
     searchCacheRef.current = readSearchCache();
 
     setWatchlist(savedWatchlist);
     setFavorites(savedFavorites);
+    isHydratingCollectionsRef.current = false;
 
     if (cachedTop10.length) {
       setTop10(cachedTop10);
       setLastUpdated(cachedTop10Time);
       setMarketNotice('');
     }
-  }, []);
+  }, [currentUser?.id]);
 
   const handleAuthFieldChange = (event) => {
     const { name, value } = event.target;
@@ -743,6 +754,17 @@ function App() {
     Sentry.setTag('segment', segment);
     Sentry.setTag('auth_mode', authMode);
 
+    try {
+      posthog.identify(userId, {
+        email: userEmail,
+        segment,
+        auth_mode: authMode,
+      });
+      posthog.reloadFeatureFlags();
+    } catch {
+      // Ignore analytics failures so authentication still succeeds.
+    }
+
     setCurrentUser({
       id: userId,
       name: userName,
@@ -754,6 +776,11 @@ function App() {
 
   const handleLogout = () => {
     Sentry.setUser(null);
+    try {
+      posthog.reset();
+    } catch {
+      // Ignore analytics failures so logout still succeeds.
+    }
     setCurrentUser(null);
     setAuthMode('login');
     setAuthError('');
@@ -825,16 +852,34 @@ function App() {
   }, [top10]);
 
   useEffect(() => {
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
     watchlistRef.current = watchlist;
     knownSuggestionsRef.current = persistKnownSuggestions(knownSuggestionsRef.current, watchlist);
-  }, [watchlist]);
+
+    if (isHydratingCollectionsRef.current) {
+      return;
+    }
+
+    const userStorageId = currentUser?.id || null;
+    const storageArea = userStorageId ? localStorage : sessionStorage;
+    const watchlistStorageKey = buildScopedCollectionKey(WATCHLIST_KEY, userStorageId);
+
+    storageArea.setItem(watchlistStorageKey, JSON.stringify(watchlist));
+  }, [currentUser?.id, watchlist]);
 
   useEffect(() => {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
     favoritesRef.current = favorites;
     knownSuggestionsRef.current = persistKnownSuggestions(knownSuggestionsRef.current, favorites);
-  }, [favorites]);
+
+    if (isHydratingCollectionsRef.current) {
+      return;
+    }
+
+    const userStorageId = currentUser?.id || null;
+    const storageArea = userStorageId ? localStorage : sessionStorage;
+    const favoritesStorageKey = buildScopedCollectionKey(FAVORITES_KEY, userStorageId);
+
+    storageArea.setItem(favoritesStorageKey, JSON.stringify(favorites));
+  }, [currentUser?.id, favorites]);
 
   useEffect(() => {
     knownSuggestionsRef.current = persistKnownSuggestions(
@@ -845,7 +890,7 @@ function App() {
 
   useEffect(() => {
     let ignore = false;
-    const hasCachedTop10 = readCachedCoins(TOP10_CACHE_KEY).length > 0;
+    const hasCachedTop10 = readCachedCoins(localStorage, TOP10_CACHE_KEY).length > 0;
 
     const loadTop10 = async () => {
       const coins = await getTop10ByVolume();
@@ -1328,7 +1373,13 @@ function App() {
   };
 
   const throwError = () => {
-    throw new Error('Sentry Test Error: Something went wrong!');
+    const error = new Error('Sentry Test Error: Something went wrong!');
+    if (import.meta.env.PROD) {
+      Sentry.captureException(error);
+      return;
+    }
+
+    throw error;
   };
 
   const suggestionVisible = useMemo(

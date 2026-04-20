@@ -11,7 +11,7 @@ CryptoTracker currently uses two observability layers:
 
 ### Error Monitoring
 
-Sentry is initialized in `src/main.jsx` with the project DSN and environment. It captures frontend runtime errors and groups repeated failures into issues.
+Sentry is initialized in `src/main.jsx` with the project DSN, environment, and a first-party tunnel path. It captures frontend runtime errors and groups repeated failures into issues.
 
 ### User Context
 
@@ -66,13 +66,15 @@ The current recommended alert pattern for this project is:
 
 ## PostHog
 
-PostHog is initialized in `src/main.jsx` when environment variables are available.
+PostHog is initialized in `src/main.jsx` when the public project token is available. Requests go through the same-origin `/api/posthog` proxy path so the browser does not talk to the cloud endpoint directly.
 
 It is used to capture user interaction events from `src/App.jsx`, including flows related to:
 
 - opening coin details
 - marking items as favorites
 - removing items from favorites
+
+After authentication the app identifies the current user in PostHog, which keeps feature-flag targeting and person analytics stable across sessions.
 
 ## Practical Monitoring Scope
 
