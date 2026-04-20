@@ -44,10 +44,9 @@ export const config = {
 
 export default async function handler(request, response) {
   const rawPath = String(request.query.path || '').trim();
-  const pathSegments = rawPath ? rawPath.split('/').filter(Boolean) : [];
   const upstreamUrl = new URL(POSTHOG_UPSTREAM_HOST);
 
-  upstreamUrl.pathname = pathSegments.length ? `/${pathSegments.join('/')}` : '/';
+  upstreamUrl.pathname = rawPath ? `/${rawPath.replace(/^\/+/, '')}` : '/';
 
   for (const [key, value] of Object.entries(request.query)) {
     if (key === 'path') {
@@ -77,7 +76,12 @@ export default async function handler(request, response) {
 
     upstreamResponse.headers.forEach((value, key) => {
       const normalizedKey = key.toLowerCase();
-      if (normalizedKey === 'content-length' || normalizedKey === 'transfer-encoding' || normalizedKey === 'connection') {
+      if (
+        normalizedKey === 'content-length' ||
+        normalizedKey === 'content-encoding' ||
+        normalizedKey === 'transfer-encoding' ||
+        normalizedKey === 'connection'
+      ) {
         return;
       }
 
