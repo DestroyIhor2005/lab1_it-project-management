@@ -7,12 +7,14 @@ import './styles.css';
 
 // Ініціалізація Sentry для моніторингу помилок
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
-const appEnv = import.meta.env.VITE_APP_ENV || 'development';
+const appStatus = String(import.meta.env.VITE_APP_STATUS || '').trim();
+const appEnv = import.meta.env.VITE_APP_ENV || (appStatus.toLowerCase().includes('production') ? 'production' : 'development');
 
 if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
     environment: appEnv,
+    tunnel: import.meta.env.VITE_SENTRY_TUNNEL_PATH || '/api/sentry',
     integrations: [
       Sentry.browserTracingIntegration(),
       Sentry.replayIntegration({
@@ -30,9 +32,9 @@ if (sentryDsn) {
 }
 
 const projectApiKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
-const apiHost = import.meta.env.VITE_PUBLIC_POSTHOG_API_HOST;
+const apiHost = import.meta.env.VITE_PUBLIC_POSTHOG_PROXY_PATH || '/api/posthog';
 
-if (projectApiKey && apiHost) {
+if (projectApiKey) {
   posthog.init(projectApiKey, {
     api_host: apiHost,
     person_profiles: 'identified_only',

@@ -5,6 +5,10 @@
       "destination": "/api/coingecko?path=:path*"
     },
     {
+      "source": "/api/posthog/:path*",
+      "destination": "/api/posthog?path=:path*"
+    },
+    {
       "source": "/api/binance/:path*",
       "destination": "https://api.binance.com/api/v3/:path*"
     }
