@@ -5,12 +5,8 @@
       "destination": "/api/coingecko?path=:path*"
     },
     {
-      "source": "/api/posthog",
-      "destination": "https://eu.i.posthog.com"
-    },
-    {
       "source": "/api/posthog/:path*",
-      "destination": "https://eu.i.posthog.com/:path*"
+      "destination": "/api/posthog?path=:path*"
     },
     {
       "source": "/api/binance/:path*",

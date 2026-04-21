@@ -45,6 +45,8 @@ export const config = {
 export default async function handler(request, response) {
   const rawPath = String(request.query.path || '').trim();
   const upstreamUrl = new URL(POSTHOG_UPSTREAM_HOST);
+  const forwardedFor = String(request.headers['x-forwarded-for'] || '').trim();
+  const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '';
 
   upstreamUrl.pathname = rawPath ? `/${rawPath.replace(/^\/+/, '')}` : '/';
 
@@ -64,10 +66,16 @@ export default async function handler(request, response) {
     const method = String(request.method || 'GET').toUpperCase();
     const hasBody = !['GET', 'HEAD'].includes(method);
     const body = hasBody ? await readRawBody(request) : null;
+    const headers = forwardHeaders(request.headers);
+
+    if (clientIp) {
+      headers['x-forwarded-for'] = clientIp;
+      headers['x-real-ip'] = clientIp;
+    }
 
     const upstreamResponse = await fetch(upstreamUrl, {
       method,
-      headers: forwardHeaders(request.headers),
+      headers,
       body: body && body.length ? body : undefined,
       redirect: 'manual',
     });
