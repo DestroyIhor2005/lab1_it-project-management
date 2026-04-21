@@ -32,7 +32,7 @@ if (sentryDsn) {
 }
 
 const projectApiKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
-const apiHost = import.meta.env.VITE_PUBLIC_POSTHOG_PROXY_PATH || '/api/posthog';
+const apiHost = import.meta.env.VITE_PUBLIC_POSTHOG_API_HOST || 'https://eu.i.posthog.com';
 
 if (projectApiKey) {
   posthog.init(projectApiKey, {
